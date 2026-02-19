@@ -1,4 +1,4 @@
-# envrbw
+# bwenv
 
 Inject [Bitwarden](https://bitwarden.com) secrets as environment variables, using [rbw](https://github.com/doy/rbw) as the backend.
 
@@ -19,35 +19,35 @@ cargo install --path .
 ### Inject secrets into a command
 
 ```sh
-envrbw <namespace> <command> [args...]
+bwenv <namespace> <command> [args...]
 ```
 
 ```sh
-envrbw prod/db psql "$DATABASE_URL"
+bwenv prod/db psql "$DATABASE_URL"
 ```
 
 ### Manage secrets
 
 ```sh
 # Add or update keys (prompts for each value)
-envrbw set <namespace> KEY1 KEY2 ...
-envrbw set prod/db DATABASE_URL SECRET_KEY --noecho   # hide input
+bwenv set <namespace> KEY1 KEY2 ...
+bwenv set prod/db DATABASE_URL SECRET_KEY --noecho   # hide input
 
 # List namespaces
-envrbw list
+bwenv list
 
 # List keys in a namespace
-envrbw list <namespace>
-envrbw list <namespace> --show-value
+bwenv list <namespace>
+bwenv list <namespace> --show-value
 
 # Remove keys (deletes the entry when the last key is removed)
-envrbw unset <namespace> KEY1 KEY2 ...
+bwenv unset <namespace> KEY1 KEY2 ...
 ```
 
 ### Folder
 
-By default all namespaces live in the `envrbw` Bitwarden folder. Override with `--folder` or `ENVRBW_FOLDER`:
+By default all namespaces live in the `bwenv` Bitwarden folder. Override with `--folder` or `BWENV_FOLDER`:
 
 ```sh
-ENVRBW_FOLDER=work envrbw staging/api node server.js
+BWENV_FOLDER=work bwenv staging/api node server.js
 ```

@@ -1,10 +1,10 @@
 [package]
-name = "envrbw"
+name = "bwenv"
 version = "0.1.1"
 edition = "2024"
 
 [[bin]]
-name = "envrbw"
+name = "bwenv"
 path = "src/main.rs"
 
 [dependencies]

@@ -18,16 +18,16 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            artifact: envrbw-linux-x86_64
+            artifact: bwenv-linux-x86_64
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact: envrbw-linux-aarch64
+            artifact: bwenv-linux-aarch64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: envrbw-darwin-aarch64
+            artifact: bwenv-darwin-aarch64
           - os: macos-14
             target: x86_64-apple-darwin
-            artifact: envrbw-darwin-x86_64
+            artifact: bwenv-darwin-x86_64
 
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +51,7 @@ jobs:
       - name: Prepare artifact
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/envrbw dist/${{ matrix.artifact }}
+          cp target/${{ matrix.target }}/release/bwenv dist/${{ matrix.artifact }}
 
       - name: Upload artifact
         if: github.event_name != 'pull_request'

@@ -1,10 +1,10 @@
-# envrbw – Copilot Instructions
+# bwenv – Copilot Instructions
 
 ## What this project is
 
-`envrbw` is a Rust CLI that injects Bitwarden secrets (via the `rbw` CLI) as environment variables. It stores key/value pairs as `KEY=VALUE` lines in the notes field of Bitwarden Login or SecureNote entries, grouped under a **namespace** (one entry per namespace) within a Bitwarden **folder** (default: `"envrbw"`).
+`bwenv` is a Rust CLI that injects Bitwarden secrets (via the `rbw` CLI) as environment variables. It stores key/value pairs as `KEY=VALUE` lines in the notes field of Bitwarden Login or SecureNote entries, grouped under a **namespace** (one entry per namespace) within a Bitwarden **folder** (default: `"bwenv"`).
 
-The `rbw/` subdirectory is a vendored copy of the upstream [rbw](https://github.com/doy/rbw) project with its own separate Cargo workspace; it is not part of the `envrbw` build.
+The `rbw/` subdirectory is a vendored copy of the upstream [rbw](https://github.com/doy/rbw) project with its own separate Cargo workspace; it is not part of the `bwenv` build.
 
 ## Build, test, and lint commands
 
@@ -43,9 +43,9 @@ src/
 ## Key conventions
 
 - **Notes format:** `KEY=VALUE` lines (split on first `=`; blank lines and `#` comments are skipped). Serialization always sorts keys alphabetically. Values may contain `=`.
-- **Folder resolution:** CLI `--folder` flag → `ENVRBW_FOLDER` env var → `"envrbw"` default.
+- **Folder resolution:** CLI `--folder` flag → `BWENV_FOLDER` env var → `"bwenv"` default.
 - **rbw subprocess writes:** `rbw add`/`rbw edit` are driven by piping to stdin (rbw detects non-TTY and reads stdin instead of launching an editor). `RBW_TTY=/dev/tty` is set so pinentry still works for unlock prompts even when stdin is piped.
-- **Login vs SecureNote format:** Login entries (created by `envrbw set`) require an empty first line (the password field) before the notes content. SecureNote entries (envwarden-compatible) are written without the leading empty line — `rbw` internally prepends one during parsing.
-- **envwarden compatibility:** If an item's notes field is empty, `load_env_pairs` falls back to reading `text`/`hidden` custom fields (read-only; existing envwarden entries can be used for `exec` but not modified by `envrbw`).
+- **Login vs SecureNote format:** Login entries (created by `bwenv set`) require an empty first line (the password field) before the notes content. SecureNote entries (envwarden-compatible) are written without the leading empty line — `rbw` internally prepends one during parsing.
+- **envwarden compatibility:** If an item's notes field is empty, `load_env_pairs` falls back to reading `text`/`hidden` custom fields (read-only; existing envwarden entries can be used for `exec` but not modified by `bwenv`).
 - **"not found" detection:** `rbw::get_item` returns `Ok(None)` by matching known stderr substrings (`"no entry found"`, `"no items found"`, `"Entry not found"`). Update this list if rbw changes its error messages.
 - **Error handling:** Uses `anyhow` throughout (`bail!`, `.context(...)`). No custom error types.

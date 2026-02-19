@@ -8,19 +8,19 @@ use std::collections::HashMap;
 use std::env;
 use std::process::Command;
 
-const DEFAULT_FOLDER: &str = "envrbw";
-const FOLDER_ENV: &str = "ENVRBW_FOLDER";
+const DEFAULT_FOLDER: &str = "bwenv";
+const FOLDER_ENV: &str = "BWENV_FOLDER";
 
 // ── CLI definition ─────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(name = "envrbw")]
+#[command(name = "bwenv")]
 #[command(version)]
 #[command(about = "Inject Bitwarden secrets (via rbw) as environment variables")]
 #[command(long_about = None)]
 struct Cli {
-    /// Bitwarden folder that holds envrbw namespaces
-    /// [env: ENVRBW_FOLDER] [default: envrbw]
+    /// Bitwarden folder that holds bwenv namespaces
+    /// [env: BWENV_FOLDER] [default: bwenv]
     #[arg(long, global = true, value_name = "FOLDER")]
     folder: Option<String>,
 
@@ -149,7 +149,7 @@ fn cmd_list(folder: &str, namespace: Option<&str>, show_value: bool) -> Result<(
             if pairs.is_empty() {
                 eprintln!(
                     "WARNING: namespace `{ns}` not found or empty.\n\
-                     You can set variables via: envrbw set {ns} SOME_VAR"
+                     You can set variables via: bwenv set {ns} SOME_VAR"
                 );
                 return Ok(());
             }
