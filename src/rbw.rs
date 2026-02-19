@@ -30,15 +30,6 @@ pub struct RbwItem {
     #[serde(rename = "type")]
     pub item_type: Option<String>,
     pub notes: Option<String>,
-    pub fields: Option<Vec<RbwField>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RbwField {
-    pub name: String,
-    pub value: Option<String>,
-    #[serde(rename = "type")]
-    pub field_type: String,
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -70,7 +61,7 @@ pub fn list_namespaces(folder: &str) -> Result<Vec<String>> {
     Ok(names)
 }
 
-/// Fetch a single item's notes and custom fields.
+/// Fetch a single item's notes.
 /// Returns `None` if the item does not exist in the given folder.
 pub fn get_item(name: &str, folder: &str) -> Result<Option<RbwItem>> {
     let mut sp = Spinner::with_stream(
@@ -116,7 +107,7 @@ pub fn create_item(name: &str, folder: &str, notes_content: &str) -> Result<()> 
 ///
 /// For Login entries (created by `create_item`): pipe `\n<content>` so the
 /// first line (password) stays empty.
-/// For SecureNote entries (envwarden-compatible): rbw internally prepends `\n`
+/// For SecureNote entries: rbw internally prepends `\n`
 /// before parsing, so pipe the content directly.
 pub fn edit_item(
     name: &str,

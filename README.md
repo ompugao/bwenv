@@ -51,7 +51,3 @@ By default all namespaces live in the `envrbw` Bitwarden folder. Override with `
 ```sh
 ENVRBW_FOLDER=work envrbw staging/api node server.js
 ```
-
-## envwarden compatibility
-
-Entries created by [envwarden](https://github.com/envwarden/envwarden) (SecureNote type, values in custom fields) can be used with `exec` mode. They are read-only; `set` will not migrate them to the notes-field format.

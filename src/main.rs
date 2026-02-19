@@ -200,33 +200,12 @@ fn resolve_folder(cli_folder: Option<&str>) -> String {
         .unwrap_or_else(|| DEFAULT_FOLDER.to_string())
 }
 
-/// Load env pairs for a namespace, merging notes-field KEY=VALUE lines and,
-/// as a fallback, any custom `fields[]` entries (envwarden compatibility).
+/// Load env pairs for a namespace from the notes-field KEY=VALUE lines.
 fn load_env_pairs(folder: &str, namespace: &str) -> Result<HashMap<String, String>> {
     let item = rbw::get_item(namespace, folder)?
         .with_context(|| format!("namespace `{namespace}` not found in folder `{folder}`"))?;
 
-    let mut pairs = HashMap::new();
-
-    // Primary: notes field KEY=VALUE lines.
-    if let Some(notes) = &item.notes {
-        pairs.extend(store::parse(notes));
-    }
-
-    // Fallback: custom fields (envwarden-compatible, read-only).
-    if pairs.is_empty() {
-        if let Some(fields) = &item.fields {
-            for f in fields {
-                if matches!(f.field_type.as_str(), "text" | "hidden") {
-                    if let Some(v) = &f.value {
-                        pairs.insert(f.name.clone(), v.clone());
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(pairs)
+    Ok(item.notes.as_deref().map(store::parse).unwrap_or_default())
 }
 
 /// Return the current notes content for a namespace, or `None` if it does not
