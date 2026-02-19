@@ -111,9 +111,10 @@ fn cmd_exec(folder: &str, namespace: &str, cmd: &str, args: &[String]) -> Result
 
 fn cmd_set(folder: &str, namespace: &str, vars: &[String], noecho: bool) -> Result<()> {
     // Fetch existing content (or empty string for new namespace).
-    let existing_notes = existing_notes(folder, namespace)?;
+    let (existing_notes, is_secure_note) = existing_notes(folder, namespace)?;
+    let is_new = existing_notes.is_empty();
 
-    let mut notes = existing_notes.clone();
+    let mut notes = existing_notes;
     for key in vars {
         let prompt = format!("{namespace}.{key}");
         let value: String = if noecho {
@@ -130,7 +131,7 @@ fn cmd_set(folder: &str, namespace: &str, vars: &[String], noecho: bool) -> Resu
         notes = store::update(&notes, key, &value);
     }
 
-    write_namespace(folder, namespace, &notes, existing_notes.is_empty())
+    write_namespace(folder, namespace, &notes, is_new, is_secure_note)
 }
 
 fn cmd_list(folder: &str, namespace: Option<&str>, show_value: bool) -> Result<()> {
@@ -166,12 +167,12 @@ fn cmd_list(folder: &str, namespace: Option<&str>, show_value: bool) -> Result<(
 }
 
 fn cmd_unset(folder: &str, namespace: &str, vars: &[String]) -> Result<()> {
-    let existing = existing_notes(folder, namespace)?;
+    let (existing, is_secure_note) = existing_notes(folder, namespace)?;
     if existing.is_empty() {
         bail!("namespace `{namespace}` not found in folder `{folder}`");
     }
 
-    let mut notes = existing.clone();
+    let mut notes = existing;
     for key in vars {
         match store::remove(&notes, key) {
             Some(updated) => notes = updated,
@@ -179,7 +180,7 @@ fn cmd_unset(folder: &str, namespace: &str, vars: &[String]) -> Result<()> {
         }
     }
 
-    write_namespace(folder, namespace, &notes, false)
+    write_namespace(folder, namespace, &notes, false, is_secure_note)
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -222,20 +223,23 @@ fn load_env_pairs(folder: &str, namespace: &str) -> Result<HashMap<String, Strin
 }
 
 /// Return the current notes content for a namespace, or an empty string if it
-/// does not yet exist.
-fn existing_notes(folder: &str, namespace: &str) -> Result<String> {
+/// does not yet exist. Also returns whether the item is a SecureNote.
+fn existing_notes(folder: &str, namespace: &str) -> Result<(String, bool)> {
     match rbw::get_item(namespace, folder)? {
-        Some(item) => Ok(item.notes.unwrap_or_default()),
-        None => Ok(String::new()),
+        Some(item) => {
+            let is_secure_note = item.item_type.as_deref() == Some("Note");
+            Ok((item.notes.unwrap_or_default(), is_secure_note))
+        }
+        None => Ok((String::new(), false)),
     }
 }
 
 /// Write (create or edit) a namespace note.
-fn write_namespace(folder: &str, namespace: &str, notes: &str, is_new: bool) -> Result<()> {
+fn write_namespace(folder: &str, namespace: &str, notes: &str, is_new: bool, is_secure_note: bool) -> Result<()> {
     if is_new {
         rbw::create_item(namespace, folder, notes)
     } else {
-        rbw::edit_item(namespace, folder, notes)
+        rbw::edit_item(namespace, folder, notes, is_secure_note)
     }
 }
 

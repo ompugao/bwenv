@@ -3,13 +3,15 @@
 //! Auth (unlock / login) is handled automatically by rbw itself — every rbw
 //! command runs `rbw unlock` / `rbw login` as needed before executing.  We
 //! just run the commands and propagate errors.
+//!
+//! Write strategy: pipe content directly to rbw's stdin.  When stdin is not a
+//! terminal, `rbw::edit::edit()` reads the entire stdin rather than launching
+//! an editor.  This avoids any temp-file / EDITOR tricks.
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::io::Write as _;
-use std::os::unix::fs::PermissionsExt as _;
 use std::process::{Command, Stdio};
-use tempfile::NamedTempFile;
 
 // ── JSON shapes returned by `rbw list --raw` and `rbw get --raw` ─────────────
 
@@ -23,6 +25,9 @@ pub struct ListItem {
 
 #[derive(Debug, Deserialize)]
 pub struct RbwItem {
+    /// Entry type: "Login", "Note", etc.
+    #[serde(rename = "type")]
+    pub item_type: Option<String>,
     pub notes: Option<String>,
     pub fields: Option<Vec<RbwField>>,
 }
@@ -37,9 +42,9 @@ pub struct RbwField {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/// List namespace names: all Secure Note (`type == "Note"`) items in `folder`.
+/// List namespace names: all items in `folder`, regardless of type.
 pub fn list_namespaces(folder: &str) -> Result<Vec<String>> {
-    let output = rbw_command()
+    let output = Command::new("rbw")
         .args(["list", "--raw"])
         .output()
         .context("failed to run `rbw list`")?;
@@ -51,10 +56,7 @@ pub fn list_namespaces(folder: &str) -> Result<Vec<String>> {
 
     let names = items
         .into_iter()
-        .filter(|i| {
-            i.item_type == "Note"
-                && i.folder.as_deref().unwrap_or("") == folder
-        })
+        .filter(|i| i.folder.as_deref().unwrap_or("") == folder)
         .map(|i| i.name)
         .collect();
 
@@ -64,14 +66,13 @@ pub fn list_namespaces(folder: &str) -> Result<Vec<String>> {
 /// Fetch a single item's notes and custom fields.
 /// Returns `None` if the item does not exist in the given folder.
 pub fn get_item(name: &str, folder: &str) -> Result<Option<RbwItem>> {
-    let output = rbw_command()
+    let output = Command::new("rbw")
         .args(["get", "--raw", "--folder", folder, name])
         .output()
         .context("failed to run `rbw get`")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // rbw exits non-zero with "no entry found" when the item is absent.
         if stderr.contains("no entry found")
             || stderr.contains("no items found")
             || stderr.contains("Entry not found")
@@ -91,86 +92,66 @@ pub fn get_item(name: &str, folder: &str) -> Result<Option<RbwItem>> {
     Ok(Some(item))
 }
 
-/// Create a new Secure Note with `notes_content` in the given folder.
-/// Uses the `$VISUAL` / `$EDITOR` trick: writes a temp script that fills the
-/// editor temp file with the desired content, then calls `rbw add`.
+/// Create a new entry (Login type) with `notes_content` in the given folder.
+///
+/// `rbw add` always creates a Login entry.  When stdin is piped (not a TTY),
+/// rbw reads the editor content directly from stdin.  Format: first line =
+/// password (empty), rest = notes.
 pub fn create_item(name: &str, folder: &str, notes_content: &str) -> Result<()> {
-    with_editor_script(notes_content, |script_path| {
-        let status = rbw_command()
-            .args(["add", "--folder", folder, name])
-            .env("VISUAL", script_path)
-            .env("EDITOR", script_path)
-            // rbw's add/edit must have a TTY for auth prompts; inherit stdio.
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("failed to run `rbw add`")?;
-
-        if !status.success() {
-            bail!("`rbw add` failed with status {}", status);
-        }
-        Ok(())
-    })
+    // Prepend empty line so rbw's parse_editor treats it as an empty password.
+    let stdin_content = format!("\n{notes_content}\n");
+    pipe_to_rbw(&["add", "--folder", folder, name], &stdin_content)
 }
 
-/// Edit an existing Secure Note, replacing its content with `notes_content`.
-pub fn edit_item(name: &str, folder: &str, notes_content: &str) -> Result<()> {
-    with_editor_script(notes_content, |script_path| {
-        let status = rbw_command()
-            .args(["edit", "--folder", folder, name])
-            .env("VISUAL", script_path)
-            .env("EDITOR", script_path)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("failed to run `rbw edit`")?;
-
-        if !status.success() {
-            bail!("`rbw edit` failed with status {}", status);
-        }
-        Ok(())
-    })
+/// Edit an existing entry, replacing its notes with `notes_content`.
+///
+/// For Login entries (created by `create_item`): pipe `\n<content>` so the
+/// first line (password) stays empty.
+/// For SecureNote entries (envwarden-compatible): rbw internally prepends `\n`
+/// before parsing, so pipe the content directly.
+pub fn edit_item(name: &str, folder: &str, notes_content: &str, is_secure_note: bool) -> Result<()> {
+    let stdin_content = if is_secure_note {
+        format!("{notes_content}\n")
+    } else {
+        format!("\n{notes_content}\n")
+    };
+    pipe_to_rbw(&["edit", "--folder", folder, name], &stdin_content)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Build a `Command` for the `rbw` executable.
-/// Inherits `RBW_PROFILE` (and all other env vars) from the current process.
-fn rbw_command() -> Command {
-    Command::new("rbw")
-}
-
-/// Write a temporary shell script that, when called with a file argument,
-/// replaces that file with `\n<notes_content>`.  The empty first line is the
-/// "password" slot; the remaining lines become the notes field.
+/// Run an rbw command with the given args, piping `stdin_content` to its stdin.
+/// rbw's `edit::edit()` detects a non-TTY stdin and reads from it directly.
 ///
-/// Calls `f` with the path to the script, then cleans up.
-fn with_editor_script<F>(notes_content: &str, f: F) -> Result<()>
-where
-    F: FnOnce(&str) -> Result<()>,
-{
-    let mut script = NamedTempFile::new().context("failed to create temp file")?;
+/// We also set `RBW_TTY` so the rbw-agent can use pinentry for unlock prompts
+/// even though our stdin is a pipe (not a terminal).
+fn pipe_to_rbw(args: &[&str], stdin_content: &str) -> Result<()> {
+    let mut cmd = Command::new("rbw");
+    cmd.args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
 
-    // Escape single-quotes in the content for embedding in the shell script.
-    let escaped = notes_content.replace('\'', "'\\''");
+    // Pass the controlling terminal so rbw-agent can launch pinentry even
+    // though our stdin is a pipe.  /dev/tty always refers to the ctty.
+    if std::path::Path::new("/dev/tty").exists() {
+        cmd.env("RBW_TTY", "/dev/tty");
+    }
 
-    write!(
-        script,
-        "#!/bin/sh\nprintf '\\n{}\\n' > \"$1\"\n",
-        escaped
-    )
-    .context("failed to write editor script")?;
+    let mut child = cmd.spawn().context("failed to spawn rbw")?;
 
-    script.flush().context("failed to flush editor script")?;
+    child
+        .stdin
+        .take()
+        .context("failed to open rbw stdin")?
+        .write_all(stdin_content.as_bytes())
+        .context("failed to write to rbw stdin")?;
 
-    // Make the script executable.
-    let path = script.path().to_owned();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
-        .context("failed to chmod editor script")?;
-
-    f(path.to_str().context("temp file path is not valid UTF-8")?)
+    let status = child.wait().context("failed to wait for rbw")?;
+    if !status.success() {
+        bail!("rbw exited with status {}", status);
+    }
+    Ok(())
 }
 
 /// Convert a failed `Command` output into an error message.
@@ -181,3 +162,4 @@ fn check_status(cmd: &str, output: &std::process::Output) -> Result<()> {
     }
     Ok(())
 }
+
