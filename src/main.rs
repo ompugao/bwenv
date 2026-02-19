@@ -242,7 +242,13 @@ fn existing_notes(folder: &str, namespace: &str) -> Result<Option<(String, bool)
 }
 
 /// Write (create or edit) a namespace note.
-fn write_namespace(folder: &str, namespace: &str, notes: &str, is_new: bool, is_secure_note: bool) -> Result<()> {
+fn write_namespace(
+    folder: &str,
+    namespace: &str,
+    notes: &str,
+    is_new: bool,
+    is_secure_note: bool,
+) -> Result<()> {
     if is_new {
         rbw::create_item(namespace, folder, notes)
     } else {

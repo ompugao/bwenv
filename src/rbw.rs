@@ -45,7 +45,11 @@ pub struct RbwField {
 
 /// List namespace names: all items in `folder`, regardless of type.
 pub fn list_namespaces(folder: &str) -> Result<Vec<String>> {
-    let mut sp = Spinner::with_stream(Spinners::Dots, "Fetching namespaces…".into(), Stream::Stderr);
+    let mut sp = Spinner::with_stream(
+        Spinners::Dots,
+        "Fetching namespaces…".into(),
+        Stream::Stderr,
+    );
     let output = Command::new("rbw")
         .args(["list", "--raw"])
         .output()
@@ -69,7 +73,11 @@ pub fn list_namespaces(folder: &str) -> Result<Vec<String>> {
 /// Fetch a single item's notes and custom fields.
 /// Returns `None` if the item does not exist in the given folder.
 pub fn get_item(name: &str, folder: &str) -> Result<Option<RbwItem>> {
-    let mut sp = Spinner::with_stream(Spinners::Dots, format!("Fetching '{name}'…"), Stream::Stderr);
+    let mut sp = Spinner::with_stream(
+        Spinners::Dots,
+        format!("Fetching '{name}'…"),
+        Stream::Stderr,
+    );
     let output = Command::new("rbw")
         .args(["get", "--raw", "--folder", folder, name])
         .output()
@@ -84,15 +92,11 @@ pub fn get_item(name: &str, folder: &str) -> Result<Option<RbwItem>> {
         {
             return Ok(None);
         }
-        bail!(
-            "`rbw get` failed ({}): {}",
-            output.status,
-            stderr.trim()
-        );
+        bail!("`rbw get` failed ({}): {}", output.status, stderr.trim());
     }
 
-    let item: RbwItem = serde_json::from_slice(&output.stdout)
-        .context("failed to parse `rbw get --raw` output")?;
+    let item: RbwItem =
+        serde_json::from_slice(&output.stdout).context("failed to parse `rbw get --raw` output")?;
 
     Ok(Some(item))
 }
@@ -114,7 +118,12 @@ pub fn create_item(name: &str, folder: &str, notes_content: &str) -> Result<()> 
 /// first line (password) stays empty.
 /// For SecureNote entries (envwarden-compatible): rbw internally prepends `\n`
 /// before parsing, so pipe the content directly.
-pub fn edit_item(name: &str, folder: &str, notes_content: &str, is_secure_note: bool) -> Result<()> {
+pub fn edit_item(
+    name: &str,
+    folder: &str,
+    notes_content: &str,
+    is_secure_note: bool,
+) -> Result<()> {
     let stdin_content = if is_secure_note {
         format!("{notes_content}\n")
     } else {
@@ -125,7 +134,11 @@ pub fn edit_item(name: &str, folder: &str, notes_content: &str, is_secure_note: 
 
 /// Delete an entry by name and folder.
 pub fn delete_item(name: &str, folder: &str) -> Result<()> {
-    let mut sp = Spinner::with_stream(Spinners::Dots, "Deleting from Bitwarden…".into(), Stream::Stderr);
+    let mut sp = Spinner::with_stream(
+        Spinners::Dots,
+        "Deleting from Bitwarden…".into(),
+        Stream::Stderr,
+    );
     let output = Command::new("rbw")
         .args(["remove", "--folder", folder, name])
         .output()
@@ -154,7 +167,11 @@ fn pipe_to_rbw(args: &[&str], stdin_content: &str) -> Result<()> {
         cmd.env("RBW_TTY", "/dev/tty");
     }
 
-    let mut sp = Spinner::with_stream(Spinners::Dots, "Saving to Bitwarden…".into(), Stream::Stderr);
+    let mut sp = Spinner::with_stream(
+        Spinners::Dots,
+        "Saving to Bitwarden…".into(),
+        Stream::Stderr,
+    );
     let mut child = cmd.spawn().context("failed to spawn rbw")?;
 
     child
@@ -180,4 +197,3 @@ fn check_status(cmd: &str, output: &std::process::Output) -> Result<()> {
     }
     Ok(())
 }
-
