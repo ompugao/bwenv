@@ -1,6 +1,7 @@
 # bwenv
 
-Inject [Bitwarden](https://bitwarden.com) secrets as environment variables, using [rbw](https://github.com/doy/rbw) as the backend.
+[sorah/envchain](https://github.com/sorah/envchain) with bitwarden backend.
+bw allows storing secrets in [Bitwarden](https://bitwarden.com) using [rbw](https://github.com/doy/rbw), and set them as environment variables when running a new process.
 
 Secrets are stored as `KEY=VALUE` lines in the notes field of a Bitwarden entry (one entry per **namespace**, grouped in a **folder**). When the last key is removed from a namespace, the entry is deleted automatically.
 
