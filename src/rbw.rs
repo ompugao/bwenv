@@ -36,15 +36,17 @@ pub struct RbwItem {
 
 /// List namespace names: all items in `folder`, regardless of type.
 pub fn list_namespaces(folder: &str) -> Result<Vec<String>> {
+    ensure_unlocked()?;
+
     let mut sp = Spinner::with_stream(
         Spinners::Dots,
         "Fetching namespaces…".into(),
         Stream::Stderr,
     );
-    let output = Command::new("rbw")
-        .args(["list", "--raw"])
-        .output()
-        .context("failed to run `rbw list`")?;
+    let mut cmd = Command::new("rbw");
+    cmd.args(["list", "--raw"]);
+    set_rbw_tty(&mut cmd);
+    let output = cmd.output().context("failed to run `rbw list`")?;
     sp.stop_with_newline();
 
     check_status("rbw list", &output)?;
@@ -64,15 +66,17 @@ pub fn list_namespaces(folder: &str) -> Result<Vec<String>> {
 /// Fetch a single item's notes.
 /// Returns `None` if the item does not exist in the given folder.
 pub fn get_item(name: &str, folder: &str) -> Result<Option<RbwItem>> {
+    ensure_unlocked()?;
+
     let mut sp = Spinner::with_stream(
         Spinners::Dots,
         format!("Fetching '{name}'…"),
         Stream::Stderr,
     );
-    let output = Command::new("rbw")
-        .args(["get", "--raw", "--folder", folder, name])
-        .output()
-        .context("failed to run `rbw get`")?;
+    let mut cmd = Command::new("rbw");
+    cmd.args(["get", "--raw", "--folder", folder, name]);
+    set_rbw_tty(&mut cmd);
+    let output = cmd.output().context("failed to run `rbw get`")?;
     sp.stop_with_newline();
 
     if !output.status.success() {
@@ -125,38 +129,86 @@ pub fn edit_item(
 
 /// Delete an entry by name and folder.
 pub fn delete_item(name: &str, folder: &str) -> Result<()> {
+    ensure_unlocked()?;
+
     let mut sp = Spinner::with_stream(
         Spinners::Dots,
         "Deleting from Bitwarden…".into(),
         Stream::Stderr,
     );
-    let output = Command::new("rbw")
-        .args(["remove", "--folder", folder, name])
-        .output()
-        .context("failed to run `rbw remove`")?;
+    let mut cmd = Command::new("rbw");
+    cmd.args(["remove", "--folder", folder, name]);
+    set_rbw_tty(&mut cmd);
+    let output = cmd.output().context("failed to run `rbw remove`")?;
     sp.stop_with_newline();
     check_status("rbw remove", &output)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Ensure the rbw vault is unlocked before running commands.  This triggers
+/// `rbw unlock` (and pinentry) up front, so that subsequent rbw commands don't
+/// need to prompt — avoiding TTY conflicts with piped stdin/stdout.
+fn ensure_unlocked() -> Result<()> {
+    let mut cmd = Command::new("rbw");
+    cmd.args(["unlocked"]);
+    set_rbw_tty(&mut cmd);
+    let output = cmd.output().context("failed to run `rbw unlocked`")?;
+    if !output.status.success() {
+        // Not unlocked — run `rbw unlock` which will invoke pinentry.
+        let mut cmd = Command::new("rbw");
+        cmd.args(["unlock"]);
+        set_rbw_tty(&mut cmd);
+        let status = cmd
+            .status()
+            .context("failed to run `rbw unlock`")?;
+        if !status.success() {
+            bail!("`rbw unlock` failed ({})", status);
+        }
+    }
+    Ok(())
+}
+
+/// Pass the real TTY device path (e.g. `/dev/pts/3`) so that the rbw-agent
+/// daemon — which has no controlling terminal — can tell pinentry which TTY to
+/// use.  `/dev/tty` would only work inside the current process tree; the agent
+/// needs an absolute device path.
+fn set_rbw_tty(cmd: &mut Command) {
+    if let Some(tty) = real_tty_path() {
+        cmd.env("RBW_TTY", tty);
+    }
+}
+
+/// Resolve the real TTY device path from stderr (fd 2).
+/// Falls back to `/dev/tty` if the real path cannot be determined.
+fn real_tty_path() -> Option<std::ffi::OsString> {
+    // Try stderr first (bwenv may have stdout piped), then stdin.
+    for fd in ["2", "0"] {
+        let link = format!("/proc/self/fd/{fd}");
+        if let Ok(path) = std::fs::read_link(&link) {
+            if path.to_string_lossy().starts_with("/dev/") {
+                return Some(path.into_os_string());
+            }
+        }
+    }
+    // Last resort: /dev/tty (works if caller has a ctty).
+    if std::path::Path::new("/dev/tty").exists() {
+        return Some("/dev/tty".into());
+    }
+    None
+}
+
 /// Run an rbw command with the given args, piping `stdin_content` to its stdin.
 /// rbw's `edit::edit()` detects a non-TTY stdin and reads from it directly.
-///
-/// We also set `RBW_TTY` so the rbw-agent can use pinentry for unlock prompts
-/// even though our stdin is a pipe (not a terminal).
 fn pipe_to_rbw(args: &[&str], stdin_content: &str) -> Result<()> {
+    ensure_unlocked()?;
+
     let mut cmd = Command::new("rbw");
     cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
-
-    // Pass the controlling terminal so rbw-agent can launch pinentry even
-    // though our stdin is a pipe.  /dev/tty always refers to the ctty.
-    if std::path::Path::new("/dev/tty").exists() {
-        cmd.env("RBW_TTY", "/dev/tty");
-    }
+    set_rbw_tty(&mut cmd);
 
     let mut sp = Spinner::with_stream(
         Spinners::Dots,
