@@ -7,6 +7,7 @@ use rpassword::read_password;
 use std::collections::HashMap;
 use std::env;
 use std::process::Command;
+use zeroize::Zeroize as _;
 
 const DEFAULT_FOLDER: &str = "bwenv";
 const FOLDER_ENV: &str = "BWENV_FOLDER";
@@ -87,11 +88,15 @@ enum Commands {
 fn cmd_exec(folder: &str, namespace: &str, cmd: &str, args: &[String]) -> Result<()> {
     validate_identifier(folder, "folder")?;
     validate_identifier(namespace, "namespace")?;
-    let pairs = load_env_pairs(folder, namespace)?;
+    let mut pairs = load_env_pairs(folder, namespace)?;
 
     // SAFETY: single-threaded at this point; no other thread reads the env.
     for (k, v) in &pairs {
         unsafe { env::set_var(k, v) };
+    }
+    // Zero secret values from the in-process copy now that env vars are set.
+    for v in pairs.values_mut() {
+        v.zeroize();
     }
 
     // Replace current process with the target command (Unix exec semantics).
@@ -122,7 +127,7 @@ fn cmd_set(folder: &str, namespace: &str, vars: &[String], noecho: bool) -> Resu
     let mut notes = existing_notes;
     for key in vars {
         let prompt = format!("{namespace}.{key}");
-        let value: String = if noecho {
+        let mut value: String = if noecho {
             eprint!("{prompt} (noecho): ");
             read_password().context("failed to read password")?
         } else {
@@ -134,9 +139,14 @@ fn cmd_set(folder: &str, namespace: &str, vars: &[String], noecho: bool) -> Resu
             buf.trim_end_matches(['\n', '\r']).to_string()
         };
         notes = store::update(&notes, key, &value);
+        // Zero the secret value in memory before it is dropped.
+        value.zeroize();
     }
 
-    write_namespace(folder, namespace, &notes, is_new, is_secure_note)
+    let result = write_namespace(folder, namespace, &notes, is_new, is_secure_note);
+    // Zero the notes string (contains all secret values) before returning.
+    notes.zeroize();
+    result
 }
 
 fn cmd_list(folder: &str, namespace: Option<&str>, show_value: bool) -> Result<()> {
