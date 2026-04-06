@@ -85,6 +85,8 @@ enum Commands {
 // ── Command implementations ────────────────────────────────────────────────────
 
 fn cmd_exec(folder: &str, namespace: &str, cmd: &str, args: &[String]) -> Result<()> {
+    validate_identifier(folder, "folder")?;
+    validate_identifier(namespace, "namespace")?;
     let pairs = load_env_pairs(folder, namespace)?;
 
     // SAFETY: single-threaded at this point; no other thread reads the env.
@@ -110,7 +112,9 @@ fn cmd_exec(folder: &str, namespace: &str, cmd: &str, args: &[String]) -> Result
 }
 
 fn cmd_set(folder: &str, namespace: &str, vars: &[String], noecho: bool) -> Result<()> {
-    let (existing_notes, is_new, is_secure_note) = match existing_notes(folder, namespace)? {
+    validate_identifier(folder, "folder")?;
+    validate_identifier(namespace, "namespace")?;
+    let (existing_notes, is_new, is_secure_note) = match existing_notes(folder, namespace)?{
         Some((notes, secure)) => (notes, false, secure),
         None => (String::new(), true, false),
     };
@@ -136,6 +140,10 @@ fn cmd_set(folder: &str, namespace: &str, vars: &[String], noecho: bool) -> Resu
 }
 
 fn cmd_list(folder: &str, namespace: Option<&str>, show_value: bool) -> Result<()> {
+    validate_identifier(folder, "folder")?;
+    if let Some(ns) = namespace {
+        validate_identifier(ns, "namespace")?;
+    }
     match namespace {
         None => {
             let mut names = rbw::list_namespaces(folder)?;
@@ -168,6 +176,8 @@ fn cmd_list(folder: &str, namespace: Option<&str>, show_value: bool) -> Result<(
 }
 
 fn cmd_unset(folder: &str, namespace: &str, vars: &[String]) -> Result<()> {
+    validate_identifier(folder, "folder")?;
+    validate_identifier(namespace, "namespace")?;
     let (existing, is_secure_note) = existing_notes(folder, namespace)?
         .with_context(|| format!("namespace `{namespace}` not found in folder `{folder}`"))?;
 
@@ -191,6 +201,26 @@ fn cmd_unset(folder: &str, namespace: &str, vars: &[String]) -> Result<()> {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+/// Reject values that could be misinterpreted as `rbw` flags or that contain
+/// characters unsafe to pass as CLI arguments.
+///
+/// Rules:
+/// - Must not be empty.
+/// - Must not start with `-` (would be parsed as a flag by rbw).
+/// - Must not contain a null byte (undefined behaviour in argv).
+fn validate_identifier(value: &str, label: &str) -> Result<()> {
+    if value.is_empty() {
+        anyhow::bail!("{label} must not be empty");
+    }
+    if value.starts_with('-') {
+        anyhow::bail!("{label} must not start with '-': {value:?}");
+    }
+    if value.contains('\0') {
+        anyhow::bail!("{label} must not contain null bytes");
+    }
+    Ok(())
+}
 
 /// Resolve the folder: CLI flag > env var > default.
 fn resolve_folder(cli_folder: Option<&str>) -> String {
