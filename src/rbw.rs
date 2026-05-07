@@ -159,9 +159,7 @@ fn ensure_unlocked() -> Result<()> {
         let mut cmd = Command::new("rbw");
         cmd.args(["unlock"]);
         set_rbw_tty(&mut cmd);
-        let status = cmd
-            .status()
-            .context("failed to run `rbw unlock`")?;
+        let status = cmd.status().context("failed to run `rbw unlock`")?;
         if !status.success() {
             bail!("`rbw unlock` failed ({})", status);
         }

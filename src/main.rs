@@ -140,7 +140,7 @@ fn cmd_exec(folder: &str, namespaces: &[String], cmd: &str, args: &[String]) -> 
 fn cmd_set(folder: &str, namespace: &str, vars: &[String], noecho: bool) -> Result<()> {
     validate_identifier(folder, "folder")?;
     validate_identifier(namespace, "namespace")?;
-    let (existing_notes, is_new, is_secure_note) = match existing_notes(folder, namespace)?{
+    let (existing_notes, is_new, is_secure_note) = match existing_notes(folder, namespace)? {
         Some((notes, secure)) => (notes, false, secure),
         None => (String::new(), true, false),
     };

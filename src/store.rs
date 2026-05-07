@@ -114,7 +114,10 @@ mod tests {
     #[test]
     fn parse_trims_key_and_value() {
         let m = parse("KEY  =  value  \n");
-        assert!(!m.contains_key("KEY  "), "trailing spaces in key must be trimmed");
+        assert!(
+            !m.contains_key("KEY  "),
+            "trailing spaces in key must be trimmed"
+        );
         assert_eq!(m["KEY"], "value");
     }
 
