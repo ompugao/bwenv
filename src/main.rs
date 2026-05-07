@@ -250,6 +250,9 @@ fn validate_identifier(value: &str, label: &str) -> Result<()> {
     if value.contains('\0') {
         anyhow::bail!("{label} must not contain null bytes");
     }
+    if value.contains(',') {
+        anyhow::bail!("{label} must not contain commas: {value:?}");
+    }
     Ok(())
 }
 
