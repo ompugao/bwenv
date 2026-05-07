@@ -85,10 +85,31 @@ enum Commands {
 
 // ── Command implementations ────────────────────────────────────────────────────
 
-fn cmd_exec(folder: &str, namespace: &str, cmd: &str, args: &[String]) -> Result<()> {
+fn cmd_exec(folder: &str, namespaces: &[String], cmd: &str, args: &[String]) -> Result<()> {
     validate_identifier(folder, "folder")?;
-    validate_identifier(namespace, "namespace")?;
-    let mut pairs = load_env_pairs(folder, namespace)?;
+    for ns in namespaces {
+        validate_identifier(ns, "namespace")?;
+    }
+
+    // Merge env pairs across namespaces in order; last namespace wins on conflict.
+    // Track which namespace first defined each key so we can warn accurately.
+    let mut merged: HashMap<String, String> = HashMap::new();
+    let mut origins: HashMap<String, String> = HashMap::new();
+    for ns in namespaces {
+        let ns_pairs = load_env_pairs(folder, ns)?;
+        for (k, v) in ns_pairs {
+            if let Some(prev_ns) = origins.get(&k) {
+                eprintln!(
+                    "warning: key \"{k}\" defined in both \"{prev_ns}\" and \"{ns}\"; \
+                     using value from \"{ns}\""
+                );
+            }
+            merged.insert(k.clone(), v);
+            origins.insert(k, ns.clone());
+        }
+    }
+
+    let mut pairs = merged;
 
     // SAFETY: single-threaded at this point; no other thread reads the env.
     for (k, v) in &pairs {
@@ -303,8 +324,16 @@ fn run() -> Result<()> {
 
             Commands::Unset { namespace, vars } => cmd_unset(&folder, &namespace, &vars),
         }
-    } else if let (Some(namespace), Some(command)) = (cli.namespace, cli.exec_command) {
-        cmd_exec(&folder, &namespace, &command, &cli.exec_args)
+    } else if let (Some(namespace_arg), Some(command)) = (cli.namespace, cli.exec_command) {
+        let namespaces: Vec<String> = namespace_arg
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if namespaces.is_empty() {
+            anyhow::bail!("namespace must not be empty");
+        }
+        cmd_exec(&folder, &namespaces, &command, &cli.exec_args)
     } else {
         Cli::command().print_help().ok();
         std::process::exit(2);
