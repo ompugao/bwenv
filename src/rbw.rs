@@ -68,16 +68,18 @@ pub fn list_namespaces(folder: &str) -> Result<Vec<String>> {
 pub fn get_item(name: &str, folder: &str) -> Result<Option<RbwItem>> {
     ensure_unlocked()?;
 
-    let mut sp = Spinner::with_stream(
-        Spinners::Dots,
-        format!("Fetching '{name}'…"),
-        Stream::Stderr,
-    );
+    let mut sp = Spinner::with_stream(Spinners::Dots, format!("Fetching {name}…"), Stream::Stderr);
+    let result = get_item_raw(name, folder);
+    sp.stop_with_newline();
+    result
+}
+
+/// Core `rbw get` subprocess call with no spinner and no unlock check.
+fn get_item_raw(name: &str, folder: &str) -> Result<Option<RbwItem>> {
     let mut cmd = Command::new("rbw");
     cmd.args(["get", "--raw", "--folder", folder, name]);
     set_rbw_tty(&mut cmd);
     let output = cmd.output().context("failed to run `rbw get`")?;
-    sp.stop_with_newline();
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -94,6 +96,44 @@ pub fn get_item(name: &str, folder: &str) -> Result<Option<RbwItem>> {
         serde_json::from_slice(&output.stdout).context("failed to parse `rbw get --raw` output")?;
 
     Ok(Some(item))
+}
+
+/// Fetch multiple items in parallel (one thread per namespace).
+/// The vault must already be unlocked before calling this.
+/// A single spinner covers the whole batch; individual fetches are silent.
+/// Results are returned in the same order as `requests`.
+pub fn get_items(
+    requests: &[(String, String)], // (name, folder) pairs
+) -> Vec<Result<Option<RbwItem>>> {
+    use std::thread;
+
+    let handles: Vec<_> = requests
+        .iter()
+        .map(|(name, folder)| {
+            let name = name.clone();
+            let folder = folder.clone();
+            thread::spawn(move || get_item_raw(&name, &folder))
+        })
+        .collect();
+
+    let names: Vec<&str> = requests.iter().map(|(n, _)| n.as_str()).collect();
+    let label = format!("Fetching '{}'…", names.join("', '"));
+    let mut sp = Spinner::with_stream(Spinners::Dots, label, Stream::Stderr);
+    let results = handles
+        .into_iter()
+        .map(|h| {
+            h.join()
+                .unwrap_or_else(|_| bail!("rbw fetch thread panicked"))
+        })
+        .collect();
+    sp.stop_with_newline();
+    results
+}
+
+/// Ensure the vault is unlocked. Public so callers can unlock once before
+/// issuing parallel fetches.
+pub fn unlock() -> Result<()> {
+    ensure_unlocked()
 }
 
 /// Create a new entry (Login type) with `notes_content` in the given folder.

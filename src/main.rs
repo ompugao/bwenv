@@ -91,12 +91,26 @@ fn cmd_exec(folder: &str, namespaces: &[String], cmd: &str, args: &[String]) -> 
         validate_identifier(ns, "namespace")?;
     }
 
+    // Unlock once up front so parallel fetches below don't each race to prompt.
+    rbw::unlock()?;
+
+    // Build (name, folder) pairs and fetch all namespaces concurrently.
+    let requests: Vec<(String, String)> = namespaces
+        .iter()
+        .map(|ns| (ns.clone(), folder.to_string()))
+        .collect();
+
+    let results = rbw::get_items(&requests);
+
     // Merge env pairs across namespaces in order; last namespace wins on conflict.
     // Track which namespace first defined each key so we can warn accurately.
     let mut merged: HashMap<String, String> = HashMap::new();
     let mut origins: HashMap<String, String> = HashMap::new();
-    for ns in namespaces {
-        let ns_pairs = load_env_pairs(folder, ns)?;
+    for (ns, result) in namespaces.iter().zip(results) {
+        let item =
+            result?.with_context(|| format!("namespace `{ns}` not found in folder `{folder}`"))?;
+        let ns_pairs: HashMap<String, String> =
+            item.notes.as_deref().map(store::parse).unwrap_or_default();
         for (k, v) in ns_pairs {
             if let Some(prev_ns) = origins.get(&k) {
                 eprintln!(
