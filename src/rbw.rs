@@ -117,7 +117,7 @@ pub fn get_items(
         .collect();
 
     let names: Vec<&str> = requests.iter().map(|(n, _)| n.as_str()).collect();
-    let label = format!("Fetching '{}'…", names.join("', '"));
+    let label = format!("Fetching {}…", names.join(", "));
     let mut sp = Spinner::with_stream(Spinners::Dots, label, Stream::Stderr);
     let results = handles
         .into_iter()
